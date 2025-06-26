@@ -1,0 +1,9 @@
+[build]
+  functions = "functions"  # Directory where Netlify will look for serverless functions
+  publish = "public"  # If you have a static frontend, it goes here (optional)
+
+[[redirects]]
+  force = true
+  from = "/api/*"
+  status = 200
+  to = "/.netlify/functions/socket.js/:splat"
