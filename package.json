@@ -10,12 +10,12 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@netlify/functions": "^4.1.7",
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "http": "^0.0.1-security",
-    "serverless-http": "^2.7.0",
-    "@netlify/functions": "^1.10.0",
     "nodemon": "^3.1.10",
+    "serverless-http": "^3.2.0",
     "socket.io": "^4.8.1",
     "uuid": "^11.1.0"
   }
