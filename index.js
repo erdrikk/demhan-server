@@ -8,7 +8,7 @@ const app = express()
 const server = http.createServer(app)
 const io = socketIo(server, {
   cors: {
-    origin: "https://card-pvp.onrender.com",
+    origin: "https://demhan.vercel.app",
     methods: ["GET", "POST"],
   },
 })
