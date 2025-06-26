@@ -88,10 +88,12 @@ function validateHand(cards) {
   let isStraight = false
   let isLowStraight = false
   let isRoyal = false
+let isBroadwayStraight = false;
 
   if (cards.length === 5 && new Set(ranks).size === 5) {
     // Check for low straight (A,2,3,4,5)
     isLowStraight = ranks.join(",") === "1,2,3,4,5"
+  isBroadwayStraight = ranks.join(",") === "1,10,11,12,13";
 
     // Check for regular straight (consecutive ranks)
     if (!isLowStraight) {
@@ -99,7 +101,7 @@ function validateHand(cards) {
     }
 
     // Check for royal flush (A,10,J,Q,K) - note: this is the ONLY valid A-high straight
-    isRoyal = isFlush && ranks.join(",") === "1,10,11,12,13"
+  isRoyal = isFlush && isBroadwayStraight;
   }
 
   switch (cards.length) {
