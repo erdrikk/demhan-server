@@ -69,6 +69,62 @@ function createDeck() {
   return deck
 }
 
+// Helper function to ensure deck has enough cards
+function ensureDeckHasCards(room, cardsNeeded) {
+  console.log(
+    `🔍 Checking deck: need ${cardsNeeded}, have ${room.deck.length}, discard pile: ${room.discardPile?.length || 0}`,
+  )
+
+  // If we have enough cards, we're good
+  if (room.deck.length >= cardsNeeded) {
+    return true
+  }
+
+  // Initialize discard pile if it doesn't exist (for tactical mode)
+  if (!room.discardPile) {
+    room.discardPile = []
+  }
+
+  // If we don't have enough cards but have a discard pile, shuffle it back in
+  if (room.discardPile.length > 0) {
+    console.log(`♻️ Deck low (${room.deck.length}), shuffling ${room.discardPile.length} cards back into deck`)
+
+    // Shuffle discard pile
+    for (let i = room.discardPile.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[room.discardPile[i], room.discardPile[j]] = [room.discardPile[j], room.discardPile[i]]
+    }
+
+    // Add to deck
+    room.deck.push(...room.discardPile)
+    room.discardPile = []
+
+    console.log(`✅ Deck replenished: now has ${room.deck.length} cards`)
+  }
+
+  // Return whether we now have enough cards
+  return room.deck.length >= cardsNeeded
+}
+
+// Helper function to add cards to discard pile
+function addToDiscardPile(room, cards) {
+  // Initialize discard pile if it doesn't exist
+  if (!room.discardPile) {
+    room.discardPile = []
+  }
+
+  // Add cards to discard pile, cleaning their state
+  room.discardPile.push(
+    ...cards.map((card) => ({
+      ...card,
+      selected: false,
+      markedForDiscard: false,
+    })),
+  )
+
+  console.log(`🗑️ Added ${cards.length} cards to discard pile (total: ${room.discardPile.length})`)
+}
+
 function validateHand(cards) {
   if (cards.length === 0) return { valid: false, error: "No cards selected" }
 
@@ -88,12 +144,10 @@ function validateHand(cards) {
   let isStraight = false
   let isLowStraight = false
   let isRoyal = false
-let isBroadwayStraight = false;
 
   if (cards.length === 5 && new Set(ranks).size === 5) {
     // Check for low straight (A,2,3,4,5)
     isLowStraight = ranks.join(",") === "1,2,3,4,5"
-  isBroadwayStraight = ranks.join(",") === "1,10,11,12,13";
 
     // Check for regular straight (consecutive ranks)
     if (!isLowStraight) {
@@ -101,7 +155,7 @@ let isBroadwayStraight = false;
     }
 
     // Check for royal flush (A,10,J,Q,K) - note: this is the ONLY valid A-high straight
-  isRoyal = isFlush && isBroadwayStraight;
+    isRoyal = isFlush && ranks.join(",") === "1,10,11,12,13"
   }
 
   switch (cards.length) {
@@ -280,10 +334,8 @@ function startGame(roomId) {
   room.turn = 1
   room.deck = deck.slice(16)
 
-  // Recycling mode specific
-  if (room.gameMode === GAME_MODES.RECYCLING) {
-    room.discardPile = []
-  }
+  // Initialize discard pile for all modes (needed for card recycling)
+  room.discardPile = []
 
   console.log("✅ Game started, emitting to room:", roomId)
 
@@ -466,20 +518,19 @@ io.on("connection", (socket) => {
 
     console.log(`🗑️ Player ${currentPlayer.name} discarding ${markedCards.length} cards`)
 
-    // Remove marked cards
-    currentPlayer.hand = currentPlayer.hand.filter((c) => !c.markedForDiscard)
-
-    if (room.gameMode === GAME_MODES.RECYCLING) {
-      // In recycling mode, add discarded cards to discard pile
-      room.discardPile.push(
-        ...markedCards.map((card) => ({
-          ...card,
-          selected: false,
-          markedForDiscard: false,
-        })),
-      )
+    // Ensure we have enough cards in deck before discarding
+    if (!ensureDeckHasCards(room, markedCards.length)) {
+      socket.emit("error", "Not enough cards available to complete discard")
+      return
     }
 
+    // Remove marked cards from hand
+    currentPlayer.hand = currentPlayer.hand.filter((c) => !c.markedForDiscard)
+
+    // Add discarded cards to discard pile (for all modes now)
+    addToDiscardPile(room, markedCards)
+
+    // Draw new cards to replace discarded ones
     const newCards = room.deck.splice(0, markedCards.length).map((card) => ({
       ...card,
       selected: false,
@@ -587,39 +638,22 @@ io.on("connection", (socket) => {
     // Deal damage to enemy
     enemyPlayer.health = Math.max(0, enemyPlayer.health - finalDamage)
 
-    // Handle played cards based on game mode
+    // Handle played cards - add to discard pile for recycling
     const playedCards = currentPlayer.hand.filter((c) => c.selected)
     currentPlayer.hand = currentPlayer.hand.filter((c) => !c.selected)
     currentPlayer.selectedCards = []
 
-    if (room.gameMode === GAME_MODES.RECYCLING) {
-      // Add played cards to discard pile
-      room.discardPile.push(
-        ...playedCards.map((card) => ({
-          ...card,
-          selected: false,
-          markedForDiscard: false,
-        })),
-      )
+    // Add played cards to discard pile (for all modes now)
+    addToDiscardPile(room, playedCards)
 
-      // If deck is low, shuffle discard pile back in
-      if (room.deck.length < 8 && room.discardPile.length > 0) {
-        console.log(`♻️ Shuffling ${room.discardPile.length} cards back into deck`)
-
-        // Shuffle discard pile
-        for (let i = room.discardPile.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1))
-          ;[room.discardPile[i], room.discardPile[j]] = [room.discardPile[j], room.discardPile[i]]
-        }
-
-        // Add to bottom of deck
-        room.deck.push(...room.discardPile)
-        room.discardPile = []
-      }
+    // Ensure we have enough cards for new hand
+    if (!ensureDeckHasCards(room, 8)) {
+      console.log("⚠️ Warning: Not enough cards for full hand replacement")
     }
 
     // Draw NEW 8 cards (replace entire hand)
-    const newCards = room.deck.splice(0, 8).map((card) => ({
+    const availableCards = Math.min(8, room.deck.length)
+    const newCards = room.deck.splice(0, availableCards).map((card) => ({
       ...card,
       selected: false,
       markedForDiscard: false,
@@ -739,32 +773,22 @@ io.on("connection", (socket) => {
       `🛡️ ${currentPlayer.name} built ${actualArmorGained} armor with ${handResult.type} (Total: ${currentPlayer.armor}/50)`,
     )
 
-    // Handle played cards based on game mode
+    // Handle played cards - add to discard pile
     const playedCards = currentPlayer.hand.filter((c) => c.selected)
     currentPlayer.hand = currentPlayer.hand.filter((c) => !c.selected)
     currentPlayer.selectedCards = []
 
-    if (room.gameMode === GAME_MODES.RECYCLING) {
-      room.discardPile.push(
-        ...playedCards.map((card) => ({
-          ...card,
-          selected: false,
-          markedForDiscard: false,
-        })),
-      )
+    // Add played cards to discard pile
+    addToDiscardPile(room, playedCards)
 
-      if (room.deck.length < 8 && room.discardPile.length > 0) {
-        console.log(`♻️ Shuffling ${room.discardPile.length} cards back into deck`)
-        for (let i = room.discardPile.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1))
-          ;[room.discardPile[i], room.discardPile[j]] = [room.discardPile[j], room.discardPile[i]]
-        }
-        room.deck.push(...room.discardPile)
-        room.discardPile = []
-      }
+    // Ensure we have enough cards for new hand
+    if (!ensureDeckHasCards(room, 8)) {
+      console.log("⚠️ Warning: Not enough cards for full hand replacement")
     }
 
-    const newCards = room.deck.splice(0, 8).map((card) => ({
+    // Draw new hand
+    const availableCards = Math.min(8, room.deck.length)
+    const newCards = room.deck.splice(0, availableCards).map((card) => ({
       ...card,
       selected: false,
       markedForDiscard: false,
@@ -844,9 +868,8 @@ io.on("connection", (socket) => {
     room.deck = deck.slice(16)
     room.lastPlayedHand = null
 
-    if (room.gameMode === GAME_MODES.RECYCLING) {
-      room.discardPile = []
-    }
+    // Initialize discard pile for all modes
+    room.discardPile = []
 
     io.to(roomId).emit("rematchAccepted", {
       room: {
@@ -910,7 +933,7 @@ io.on("connection", (socket) => {
   })
 })
 
-const PORT = process.env.PORT || 8080
+const PORT = process.env.PORT || 3001
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`)
 })
