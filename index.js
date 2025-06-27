@@ -8,7 +8,7 @@ const app = express()
 const server = http.createServer(app)
 const io = socketIo(server, {
   cors: {
-    origin: "https://demhan.vercel.app",
+    origin: "http://localhost:3001",
     methods: ["GET", "POST"],
   },
 })
@@ -38,7 +38,7 @@ const GAME_MODE_CONFIG = {
     name: "Tactical",
   },
   [GAME_MODES.RECYCLING]: {
-    startingHealth: 150, // Increased HP for longer games
+    startingHealth: 500, // Increased HP for longer games
     name: "Recycling",
   },
 }
@@ -144,10 +144,12 @@ function validateHand(cards) {
   let isStraight = false
   let isLowStraight = false
   let isRoyal = false
+  let isBroadwayStraight = false
 
   if (cards.length === 5 && new Set(ranks).size === 5) {
     // Check for low straight (A,2,3,4,5)
     isLowStraight = ranks.join(",") === "1,2,3,4,5"
+    isBroadwayStraight = ranks.join(",") === "1,10,11,12,13"
 
     // Check for regular straight (consecutive ranks)
     if (!isLowStraight) {
@@ -155,7 +157,7 @@ function validateHand(cards) {
     }
 
     // Check for royal flush (A,10,J,Q,K) - note: this is the ONLY valid A-high straight
-    isRoyal = isFlush && ranks.join(",") === "1,10,11,12,13"
+    isRoyal = isFlush && isBroadwayStraight
   }
 
   switch (cards.length) {
@@ -187,7 +189,7 @@ function validateHand(cards) {
       if (isFlush && (isStraight || isLowStraight)) return { valid: true }
       if (counts[0] === 3 && counts[1] === 2) return { valid: true }
       if (isFlush) return { valid: true }
-      if (isStraight || isLowStraight) return { valid: true }
+      if (isStraight || isLowStraight || isBroadwayStraight) return { valid: true }
       return { valid: false, error: "5 cards must form: Straight, Flush, Full House, Straight Flush, or Royal Flush" }
     default:
       return { valid: false, error: `Invalid number of cards: ${cards.length}. Play 1, 2, 3, 4, or 5 cards only.` }
@@ -240,9 +242,11 @@ function evaluateHand(cards) {
   let isStraight = false
   let isLowStraight = false
   let isRoyal = false
+  let isBroadwayStraight = false
 
   if (cards.length === 5 && new Set(ranks).size === 5) {
     isLowStraight = ranks.join(",") === "1,2,3,4,5"
+    isBroadwayStraight = ranks.join(",") === "1,10,11,12,13"
     if (!isLowStraight) {
       isStraight = ranks[4] - ranks[0] === 4
     }
@@ -267,7 +271,7 @@ function evaluateHand(cards) {
   } else if (isFlush) {
     handType = "Flush"
     baseDamage = HAND_RANKINGS["Flush"].damage
-  } else if (isStraight || isLowStraight) {
+  } else if (isStraight || isLowStraight || isBroadwayStraight) {
     handType = "Straight"
     baseDamage = HAND_RANKINGS["Straight"].damage
   } else if (counts[0] === 3) {
@@ -639,12 +643,13 @@ io.on("connection", (socket) => {
     enemyPlayer.health = Math.max(0, enemyPlayer.health - finalDamage)
 
     // Handle played cards - add to discard pile for recycling
+    const testCard = currentPlayer.hand
     const playedCards = currentPlayer.hand.filter((c) => c.selected)
     currentPlayer.hand = currentPlayer.hand.filter((c) => !c.selected)
     currentPlayer.selectedCards = []
 
     // Add played cards to discard pile (for all modes now)
-    addToDiscardPile(room, playedCards)
+    addToDiscardPile(room, testCard)
 
     // Ensure we have enough cards for new hand
     if (!ensureDeckHasCards(room, 8)) {
@@ -774,12 +779,13 @@ io.on("connection", (socket) => {
     )
 
     // Handle played cards - add to discard pile
+    const testCard = currentPlayer.hand
     const playedCards = currentPlayer.hand.filter((c) => c.selected)
     currentPlayer.hand = currentPlayer.hand.filter((c) => !c.selected)
     currentPlayer.selectedCards = []
 
     // Add played cards to discard pile
-    addToDiscardPile(room, playedCards)
+    addToDiscardPile(room, testCard)
 
     // Ensure we have enough cards for new hand
     if (!ensureDeckHasCards(room, 8)) {
@@ -933,7 +939,7 @@ io.on("connection", (socket) => {
   })
 })
 
-const PORT = process.env.PORT || 3001
+const PORT = process.env.PORT || 4545
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`)
 })
